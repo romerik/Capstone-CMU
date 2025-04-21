@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+
+      --color-coffee-dark: '#4B2E2B',
+      --color-coffee-latte: '#D7C0AE',
+      --color-coffee-cream: '#FFF1E0',
+      --color-coffee-black: '#2E2E2E',
+      --color-coffee-accent: '#8FB996'
+
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #FFF1E0;
+}
