@@ -109,25 +109,15 @@ const Orders = () => {
     
     setIsLoading(true);
     
-    // Prepare delivery details
-    const deliveryDetails = {
-      location: selectedLocation,
-      address: selectedLocation === 'Delivery' ? customAddress : null,
-      instructions: document.getElementById('delivery-instructions')?.value || ''
-    };
+    // Vider le panier après avoir créé la commande
+    localStorage.setItem('cart', JSON.stringify([]));
+
+    // Envoyer un événement pour mettre à jour l'interface
+    const event = new CustomEvent('cartUpdated', { 
+      detail: { cart: [] } 
+    });
+    window.dispatchEvent(event);
     
-    // Simulate processing delay
-    // setTimeout(() => {
-    //   const result = placeOrder(deliveryDetails);
-      
-    //   if (result.success) {
-    //     navigate('/robot');
-    //   } else {
-    //     alert(result.message || 'An error occurred. Please try again.');
-    //     setIsLoading(false);
-    //   }
-    // }, 1000);
-    // const result = placeOrder(deliveryDetails);
     fetch('https://2e19-41-216-98-178.ngrok-free.app/api/delivery/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -196,7 +196,6 @@ export const getMenuItems = () => {
     }
   ];
   
-  
   // Save default menu to localStorage
   localStorage.setItem('menuItems', JSON.stringify(defaultMenu));
   
