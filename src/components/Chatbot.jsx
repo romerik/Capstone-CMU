@@ -41,6 +41,14 @@ const Chatbot = () => {
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
   const navigate = useNavigate();
+
+  const [user, setUser] = useState(null);
+    
+  useEffect(() => {
+    // Vérifier si l'utilisateur est connecté
+    const userData = JSON.parse(localStorage.getItem('user'));
+    setUser(userData);
+  }, []);
   
   // Initialize OpenAI client
   const openai = useRef(
@@ -511,7 +519,7 @@ const Chatbot = () => {
             },
             language: {
               type: "string",
-              enum: ["en", "fr", "es", "de", "it", "ja", "zh", "ar"],
+              enum: ["en", "fr", "es", "de", "it", "ja", "zh", "ar", "sw","rw "],
               description: "Language code to switch to (only for change_language action)"
             }
           },
@@ -1312,7 +1320,9 @@ const Chatbot = () => {
       'it': 'Italian',
       'ja': 'Japanese',
       'zh': 'Chinese',
-      'ar': 'Arabic'
+      'ar': 'Arabic',
+      'sw': "Swahili",
+      'rw': "Kinyarwanda"
     };
     return languageMap[code] || code;
   };
@@ -1327,7 +1337,9 @@ const Chatbot = () => {
       { code: 'it', name: 'Italiano' },
       { code: 'ja', name: '日本語' },
       { code: 'zh', name: '中文' },
-      { code: 'ar', name: 'العربية' }
+      { code: 'ar', name: 'العربية' },
+      { code: 'sw', name: 'Swahili' },
+      { code: 'rw', name: "Kinyarwanda" }
     ];
   };
   
@@ -2033,13 +2045,22 @@ const Chatbot = () => {
               /* Messages view */
               <div className="h-[55vh] overflow-y-auto p-4 bg-gray-50">
                 {messages.length === 0 ? (
-                  <div className="text-center text-gray-500 mt-20">
-                    <p className="mb-2">Start a conversation</p>
-                    <p className="text-xs text-gray-400">Try asking about our coffee, tea, or ordering a drink!</p>
+                  <div className="text-center text-gray-600 mt-16 px-4">
+                    <div className="text-4xl mb-3">☕️ 👋</div>
+                    <p className="mb-3 font-medium">
+                      {user?.username 
+                        ? `Hello ${user.username}! Ready for a delicious coffee?` 
+                        : "Welcome to Neo Café!"}
+                    </p>    
+                    <p className="text-sm text-gray-500 mb-4">
+                      You can ask me for our menu, order your favorite coffee,
+                      or discover our daily specials!
+                    </p>
                   </div>
                 ) : (
                   messages.map(message => renderMessage(message))
                 )}
+
                 {isLoading && (
                   <div className="text-left mb-3">
                     <div className="flex items-start">

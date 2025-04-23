@@ -26,7 +26,7 @@ function App() {
     if (isAuthenticated()) {
       const userData = JSON.parse(localStorage.getItem('user'));
       setUser(userData);
-    }
+    } // user?.username
   }, []);
 
   // Route protégée pour les pages qui nécessitent une authentification
