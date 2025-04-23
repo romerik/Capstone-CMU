@@ -281,7 +281,7 @@ const OrderHistory = () => {
                       </div>
                       {order ? <div>
                         <p className="text-sm font-medium text-[#2C1A1D]">{order.location.location}</p>
-                        <p className="text-xs text-gray-500 mt-1">{order.address || order.loation.address}</p>
+                        <p className="text-xs text-gray-500 mt-1">{order.address || order.location.address}</p>
                       </div> : ""}
                     </div>
                     
