@@ -12,6 +12,22 @@ const Orders = () => {
   const [customAddress, setCustomAddress] = useState('');
   const [deliveryError, setDeliveryError] = useState('');
   const [showLocationError, setShowLocationError] = useState(false);
+
+  useEffect(() => {
+    
+    
+   const updateCar = () => {
+      const cartItems = getCartItems();
+      setCartItems(cartItems);
+    };
+    
+    // Vérification périodique
+    const intervalId = setInterval(updateCar, 1000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
   
   const locations = [
     {"label": "Office 1", "value": "Office 1", "icon": <FaBuilding />},

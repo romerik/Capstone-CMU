@@ -32,6 +32,47 @@ const Menu = () => {
     const count = cart.reduce((sum, item) => sum + item.quantity, 0);
     setCartItemsCount(count);
   };
+
+  useEffect(() => {
+    // Fonction pour mettre à jour le compteur
+    const updateCartCount = () => {
+      const cart = JSON.parse(localStorage.getItem('cart')) || [];
+      const count = cart.reduce((total, item) => total + item.quantity, 0);
+      setCartItemsCount(count);
+    };
+    
+    // Mettre à jour initialement
+    updateCartCount();
+    
+    // Écouter les événements de mise à jour du panier
+    const handleCartUpdated = (event) => {
+      if (event.detail && event.detail.cart) {
+        const count = event.detail.cart.reduce((total, item) => total + item.quantity, 0);
+        setCartItemsCount(count);
+      } else {
+        updateCartCount();
+      }
+    };
+    
+    // Écouter les changements de localStorage
+    const handleStorageChange = (e) => {
+      if (e.key === 'cart') {
+        updateCartCount();
+      }
+    };
+    
+    window.addEventListener('cartUpdated', handleCartUpdated);
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Vérification périodique
+    const intervalId = setInterval(updateCartCount, 1000);
+    
+    return () => {
+      window.removeEventListener('cartUpdated', handleCartUpdated);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(intervalId);
+    };
+  }, []);
   
   // Get category icon
   const getCategoryIcon = (category) => {
