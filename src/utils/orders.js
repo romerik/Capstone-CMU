@@ -181,14 +181,66 @@ const getAddressForLocation = (location) => {
 const generateMockOrderHistory = () => {
   const now = new Date();
   const mockMenuItems = [
-    { id: '1', name: 'Espresso', price: 2.5 },
-    { id: '2', name: 'Cappuccino', price: 4.0 },
-    { id: '3', name: 'Butter Croissant', price: 3.0 },
-    { id: '4', name: 'Latte', price: 4.5 },
-    { id: '5', name: 'Blueberry Muffin', price: 3.5 },
-    { id: '6', name: 'Avocado Toast', price: 6.5 },
-    { id: '7', name: 'Cold Brew', price: 4.0 },
-    { id: '8', name: 'Tiramisu', price: 5.5 }
+    {
+      id: '1',
+      name: 'Espresso',
+      price: 2.5,
+      category: 'drinks',
+      image: '/espresso.jpg',
+      description: 'Intense and bold coffee shot with rich crema',
+      isNew: false,
+      isFeatured: true
+    },
+    {
+      id: '2',
+      name: 'Cappuccino',
+      price: 4.0,
+      category: 'drinks',
+      image: '/cappuccino.jpg',
+      description: 'Espresso with steamed milk and velvety foam',
+      isNew: false,
+      isFeatured: true
+    },
+    {
+      id: '3',
+      name: 'Latte',
+      price: 4.5,
+      category: 'drinks',
+      image: '/latte.jpg',
+      description: 'Espresso with steamed milk and a light layer of foam',
+      isNew: false,
+      isFeatured: false
+    },
+    {
+      id: '4',
+      name: 'Americano',
+      price: 3.0,
+      category: 'drinks',
+      image: '/americano.jpg',
+      description: 'Espresso diluted with hot water for a milder flavor',
+      isNew: false,
+      isFeatured: false
+    },
+    {
+      id: '5',
+      name: 'Macchiato',
+      price: 3.5,
+      category: 'drinks',
+      image: '/macchiato.jpg',
+      description: 'Espresso "stained" with a touch of foamed milk',
+      isNew: false,
+      isFeatured: false
+    },
+    {
+      id: '6',
+      name: 'Flat White',
+      price: 4.0,
+      category: 'drinks',
+      image: '/flatwhite.jpg',
+      description: 'Smooth espresso with steamed milk and minimal foam',
+      isNew: false,
+      isFeatured: false
+    },
   ];
   
   const locations = [
