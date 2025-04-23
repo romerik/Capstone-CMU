@@ -212,7 +212,7 @@ const Landing = () => {
                   Your order delivered promptly by our intelligent robots, with real-time tracking and zero carbon footprint.
                 </p>
                 <div className="mt-6 relative z-10">
-                  <Link to="/robot-tracker" className="inline-block text-[#2C1A1D] hover:text-[#D7B49E] font-medium transition-colors">
+                  <Link to="/robot" className="inline-block text-[#2C1A1D] hover:text-[#D7B49E] font-medium transition-colors">
                     Track Your Order <span className="ml-1">→</span>
                   </Link>
                 </div>

@@ -236,7 +236,7 @@ const About = () => {
                 Our app gives you complete visibility of your order, from preparation to delivery, with the ability to communicate with both our staff and the delivery robot if needed.
               </p>
               <div className="mt-8">
-                {/* <Link to="/robot-tracker" className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-[#4B2E2B] hover:bg-opacity-90 transition-colors">
+                {/* <Link to="/robot" className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-[#4B2E2B] hover:bg-opacity-90 transition-colors">
                   Learn more about our robots
                 </Link> */}
               </div>
