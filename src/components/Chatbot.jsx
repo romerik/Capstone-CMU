@@ -45,7 +45,7 @@ const Chatbot = () => {
   // Initialize OpenAI client
   const openai = useRef(
     new OpenAI({
-      apiKey: "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",
+      apiKey: "",
       dangerouslyAllowBrowser: true
     })
   ).current;
