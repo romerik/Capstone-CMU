@@ -15,12 +15,15 @@ import {
   FaVolumeUp,
   FaPlus,
   FaMinus,
-  FaStar
+  FaStar,
+  FaGlobe
 } from 'react-icons/fa';
 import { getChatHistory, saveMessage, clearChatHistory } from '../utils/chat';
 import { useNavigate } from 'react-router-dom';
+import OpenAI from 'openai';
 
-import { getItemsByCategory, getCategories } from '../utils/menu';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,13 +35,20 @@ const Chatbot = () => {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [cartItems, setCartItems] = useState([]);
-  const [totalPrice, setTotalPrice] = useState(0);
-  const [frequentOrders, setFrequentOrders] = useState([]);
-  const [hasOrderHistory, setHasOrderHistory] = useState(false);
+  const [hasPlayedWelcome, setHasPlayedWelcome] = useState(false);
+  const [language, setLanguage] = useState('en'); // Default language is English
   
   const messagesEndRef = useRef(null);
+  const audioRef = useRef(null);
   const navigate = useNavigate();
+  
+  // Initialize OpenAI client
+  const openai = useRef(
+    new OpenAI({
+      apiKey: "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",
+      dangerouslyAllowBrowser: true
+    })
+  ).current;
   
   // Load message history and initialize data
   useEffect(() => {
@@ -49,144 +59,96 @@ const Chatbot = () => {
     const convos = groupMessagesByConversation(history);
     setConversations(convos);
     
-    // Check if there's an ongoing order in localStorage
+    // Check for existing order in localStorage
     const savedOrder = JSON.parse(localStorage.getItem('currentOrder'));
     if (savedOrder) {
       setCurrentOrder(savedOrder);
     }
     
-    // Load order history for "as usual" functionality
-    loadOrderHistory();
-    
-    // Play welcome sound and send a message if user data exists
-    sendWelcomeMessage();
-
-    // Load cart items
-    loadCartItems();
-    
-    // Set up cart storage listener to update the cart in real-time
-    window.addEventListener('cart-updated', loadCartItems);
-    
-    return () => {
-      window.removeEventListener('cart-updated', loadCartItems);
-    };
-  }, []);
-
-  // Load order history for the "as usual" functionality
-  const loadOrderHistory = () => {
-    try {
-      const orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
-      
-      if (orderHistory.length > 0) {
-        setHasOrderHistory(true);
-        
-        // Count occurrences of each product to find frequent orders
-        const productCounts = {};
-        
-        orderHistory.forEach(order => {
-          order.items.forEach(item => {
-            if (!productCounts[item.id]) {
-              productCounts[item.id] = {
-                ...item,
-                count: 0,
-                lastOrdered: null
-              };
-            }
-            productCounts[item.id].count += item.quantity;
-            productCounts[item.id].lastOrdered = order.timestamp;
-          });
-        });
-        
-        // Convert to array and sort by count
-        const frequentProducts = Object.values(productCounts)
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 3); // Get top 3 frequent items
-          
-        setFrequentOrders(frequentProducts);
-      }
-    } catch (error) {
-      console.error("Error loading order history:", error);
-      setHasOrderHistory(false);
-    }
-  };
-
-  // Refresh messages when chat is opened
-  useEffect(() => {
-    if (isOpen) {
-      // Load cart items each time the chat is opened
-      loadCartItems();
-      
-      // Refresh order history
-      loadOrderHistory();
-    }
-  }, [isOpen]);
-
-  // Function to load cart items and update state
-  const loadCartItems = () => {
-    try {
-      const cart = JSON.parse(localStorage.getItem('cart')) || [];
-      setCartItems(cart);
-      
-      // Calculate total price
-      const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      setTotalPrice(total);
-    } catch (error) {
-      console.error("Error loading cart:", error);
-    }
-  };
-
-  // Custom event dispatcher for cart updates
-  const dispatchCartUpdate = () => {
-    const event = new Event('cart-updated');
-    window.dispatchEvent(event);
-  };
-
-  // Function to send a welcome message
-  const sendWelcomeMessage = () => {
+    // Play welcome sound and send welcome message if user data exists
     const userData = JSON.parse(localStorage.getItem('userInfo')) || {};
-    
-    if (userData.name) {
-      // Play welcome sound
-      playWelcomeSound();
+    if (userData.name && !hasPlayedWelcome && !isMuted) {
+      setHasPlayedWelcome(true);
       
-      // Create and add welcome message
-      const welcomeMessage = {
-        id: Date.now().toString(),
-        sender: 'bot',
-        text: userData.isReturningUser 
-          ? `👋 Welcome back, ${userData.name}! Great to see you again at Neo Café. How can I help you today?` 
-          : `👋 Hello ${userData.name}! Welcome to Neo Café. How can I help you today?`,
-        timestamp: new Date().toISOString()
-      };
-      
-      saveMessage(welcomeMessage);
-      setMessages(prev => [welcomeMessage, ...prev]);
-      
-      // Update user
-      if (!userData.isReturningUser) {
-        localStorage.setItem('userInfo', JSON.stringify({
-          ...userData,
-          isReturningUser: true
-        }));
-      }
+      setTimeout(() => {
+        // Play welcome sound
+        if (audioRef.current && !isMuted) {
+          audioRef.current.play().catch(e => console.error("Audio play failed:", e));
+        }
+        
+        // Send welcome message
+        const welcomeMessage = {
+          id: Date.now().toString(),
+          sender: 'bot',
+          text: userData.isReturningUser 
+            ? `Welcome back, ${userData.name}! Great to see you again at Neo Café. How can I help you today?` 
+            : `Hello ${userData.name}! Welcome to Neo Café. How can I help you today?`,
+          timestamp: new Date().toISOString()
+        };
+        
+        saveMessage(welcomeMessage);
+        setMessages(prev => [...prev, welcomeMessage]);
+        
+        // Update user as returning user
+        if (!userData.isReturningUser) {
+          localStorage.setItem('userInfo', JSON.stringify({
+            ...userData,
+            isReturningUser: true
+          }));
+        }
+      }, 500);
     }
-  };
 
-  // Play a simple sound
-  const playWelcomeSound = () => {
-    if (isMuted) return;
-    
-    try {
-      const audio = new Audio();
-      audio.src = 'https://www.soundjay.com/buttons/sounds/button-09.mp3';
-      audio.volume = 0.5;
-      audio.play().catch(err => console.log("Could not play audio:", err));
-    } catch (e) {
-      console.error('Audio play error:', e);
+    // Initialiser le menu si non existant
+    const menuItems = localStorage.getItem('menuItems');
+    if (!menuItems) {
+      const defaultMenu = [
+        {
+          id: '1',
+          name: 'Espresso',
+          price: 2.5,
+          category: 'drinks',
+          image: '/espresso.jpg',
+          description: 'Intense and bold coffee shot with rich crema',
+          isNew: false,
+          isFeatured: true
+        },
+        {
+          id: '2',
+          name: 'Cappuccino',
+          price: 4.0,
+          category: 'drinks',
+          image: '/cappuccino.jpg',
+          description: 'Espresso with steamed milk and velvety foam',
+          isNew: false,
+          isFeatured: true
+        },
+        {
+          id: '3',
+          name: 'Latte',
+          price: 4.5,
+          category: 'drinks',
+          image: '/latte.jpg',
+          description: 'Espresso with steamed milk and a light layer of foam',
+          isNew: false,
+          isFeatured: false
+        },
+        {
+          id: '11',
+          name: 'Butter Croissant',
+          price: 3.0,
+          category: 'food',
+          image: '/croissant.jpg',
+          description: 'Flaky and buttery French pastry',
+          isNew: false,
+          isFeatured: true
+        }
+      ];
+      localStorage.setItem('menuItems', JSON.stringify(defaultMenu));
     }
-  };
+  }, []);
   
-  // Scroll to the latest message
+  // Scroll to latest message
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -213,410 +175,1075 @@ const Chatbot = () => {
     })).sort((a, b) => new Date(b.date) - new Date(a.date));
   };
   
-  // Function to get products with robust error handling
-  const getAllProducts = () => {
-    try {
-      const storedItems = localStorage.getItem('menuItems');
-      
-      if (storedItems) {
-        const parsedItems = JSON.parse(storedItems);
-        if (Array.isArray(parsedItems) && parsedItems.length > 0) {
-          return parsedItems;
-        }
-      }
-      
-      // If localStorage data is invalid, use categories to get products
-      const categories = getCategories();
-      let allProducts = [];
-      
-      categories.forEach(category => {
-        const categoryProducts = getCategoryProducts(category);
-        if (categoryProducts && categoryProducts.length) {
-          allProducts = [...allProducts, ...categoryProducts];
-        }
-      });
-      
-      if (allProducts.length > 0) {
-        return allProducts;
-      }
-    } catch (error) {
-      console.error("Error fetching menu items:", error);
-    }
-    
-    // Fallback: minimal product list
-    return [
-      { id: '1', name: 'Espresso', price: 2.50, category: 'drinks', image: '/espresso.jpg', description: 'Strong black coffee' },
-      { id: '2', name: 'Cappuccino', price: 3.50, category: 'drinks', image: '/cappuccino.jpg', description: 'Espresso with steamed milk and foam' },
-      { id: '3', name: 'Latte', price: 3.75, category: 'drinks', image: '/latte.jpg', description: 'Espresso with lots of steamed milk' },
-      { id: 'p1', name: 'Croissant', price: 2.95, category: 'food', image: '/croissant.jpg', description: 'Buttery, flaky pastry' }
-    ];
-  };
-
-  // Function to get products for a category
-  const getCategoryProducts = (category) => {
-    try {
-      // Use the imported function directly
-      return getItemsByCategory(category);
-    } catch (error) {
-      console.log(`Could not get products for category ${category}:`, error);
-      
-      // Fallback: if the imported function fails, try filtering products directly
-      try {
-        const storedItems = localStorage.getItem('menuItems');
-        if (storedItems) {
-          const items = JSON.parse(storedItems);
-          if (Array.isArray(items)) {
-            return items.filter(item => item.category === category);
-          }
-        }
-      } catch (err) {
-        console.error("Error filtering products by category:", err);
-      }
-    }
-    
-    return [];
-  };
-
-  // Function to add a product to the cart with error handling
-  const addToCart = (productName, quantity = 1) => {
-    try {
-      // Get all products
-      const products = getAllProducts();
-      if (!products || !Array.isArray(products) || products.length === 0) {
-        return "Sorry, our product catalog is currently unavailable.";
-      }
-      
-      // Search for product by name (flexible search)
-      const normalizedName = productName.toLowerCase().trim();
-      
-      // Try exact match first
-      let productToAdd = products.find(product => 
-        product.name.toLowerCase() === normalizedName
-      );
-      
-      // If not found, try partial match
-      if (!productToAdd) {
-        productToAdd = products.find(product => 
-          product.name.toLowerCase().includes(normalizedName)
-        );
-      }
-      
-      // If still not found, try with alternative keywords
-      if (!productToAdd) {
-        // Alternative keywords for common products
-        const alternatives = {
-          'coffee': ['espresso', 'americano', 'latte', 'cappuccino', 'mocha'],
-          'tea': ['earl grey', 'green tea', 'chamomile'],
-          'pastry': ['croissant', 'muffin', 'scone']
-        };
-        
-        // Search in alternatives
-        for (const [key, values] of Object.entries(alternatives)) {
-          if (normalizedName.includes(key)) {
-            // Suggest the first available alternative product
-            for (const alt of values) {
-              const altProduct = products.find(p => 
-                p.name.toLowerCase().includes(alt)
-              );
-              if (altProduct) {
-                return `We don't have exactly "${productName}", but would you like a ${altProduct.name} instead?`;
-              }
+  // Define OpenAI tools
+  const getOpenAITools = () => [
+    {
+      type: "function",
+      function: {
+        name: "menu_tool",
+        description: "Manages the user's cart for Neo Café products",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["get_products", "add_to_cart", "remove_from_cart", "get_cart", "clear_cart", "calculate_total", "update_quantity"],
+              description: "The action to perform with the menu tool"
+            },
+            product_id: {
+              type: "string",
+              description: "ID of the product to add or remove (only for add_to_cart, remove_from_cart, and update_quantity actions)"
+            },
+            product_name: {
+              type: "string",
+              description: "Name of the product to add to cart (used when product_id is not available)"
+            },
+            quantity: {
+              type: "integer",
+              description: "Number of items to add to cart (only for add_to_cart action) or new quantity to set (for update_quantity action)"
+            },
+            show_menu: {
+              type: "boolean",
+              description: "Whether to display the full menu to the user"
             }
-          }
+          },
+          required: ["action"]
         }
       }
+    },
+    {
+      type: "function",
+      function: {
+        name: "welcome_tool",
+        description: "Manages user personalization and welcome experience",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["get_user_info", "update_user_info", "play_welcome_sound"],
+              description: "The action to perform with the welcome tool"
+            },
+            user_name: {
+              type: "string",
+              description: "Name of the user to store (only for update_user_info action)"
+            },
+            preferences: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "User preferences to store (only for update_user_info action)"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "order_tool",
+        description: "Handles order creation and management",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["create_order", "get_order", "update_order_status", "get_order_history", "place_order"],
+              description: "The action to perform with the order tool"
+            },
+            order_id: {
+              type: "string",
+              description: "ID of the order to update (only for update_order_status action)"
+            },
+            new_status: {
+              type: "string",
+              enum: ["Processing", "Preparing", "Out for delivery", "Delivered"],
+              description: "New status for the order (only for update_order_status action)"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "confirmation_tool",
+        description: "Handles order confirmation process",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["confirm_order", "cancel_order", "ask_confirmation"],
+              description: "The action to perform with the confirmation tool"
+            },
+            order_id: {
+              type: "string",
+              description: "ID of the order to confirm or cancel"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "location_tool",
+        description: "Manages delivery location selection",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["get_delivery_locations", "set_delivery_location", "show_location_options"],
+              description: "The action to perform with the location tool"
+            },
+            order_id: {
+              type: "string",
+              description: "ID of the order to update with location (only for set_delivery_location action)"
+            },
+            location_id: {
+              type: "string",
+              description: "ID of the selected location (only for set_delivery_location action)"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "navigation_tool",
+        description: "Handles redirections to other pages",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["redirect_to_cart", "redirect_to_tracking", "redirect_to_menu"],
+              description: "The action to perform with the navigation tool"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "usual_order_tool",
+        description: "Provides intelligent order recommendations based on user history",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["get_frequent_orders", "get_time_recommendations", "create_usual_order"],
+              description: "The action to perform with the usual order tool"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "ui_tool",
+        description: "Controls the chat UI enhancements",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: ["toggle_chat_size", "toggle_sound_mute", "change_language"],
+              description: "The action to perform with the UI tool"
+            },
+            language: {
+              type: "string",
+              enum: ["en", "fr", "es", "de", "it", "ja", "zh", "ar"],
+              description: "Language code to switch to (only for change_language action)"
+            }
+          },
+          required: ["action"]
+        }
+      }
+    }
+  ];
+  
+  // Implement tool function handlers
+  const handleToolFunctions = async (toolCalls) => {
+    const results = [];
+    
+    for (const toolCall of toolCalls) {
+      const functionName = toolCall.function.name;
+      let args = {};
       
-      // If product not found after all attempts
-      if (!productToAdd) {
-        return `Sorry, I couldn't find "${productName}" in our menu. Would you like to see our available options?`;
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch (error) {
+        console.error("Error parsing tool arguments:", error);
+        results.push({
+          tool_call_id: toolCall.id,
+          output: JSON.stringify({ success: false, error: "Invalid arguments format" })
+        });
+        continue;
       }
       
-      // Get current cart safely
-      let cart = [];
+      let result;
+      
       try {
-        const cartData = localStorage.getItem('cart');
-        if (cartData) {
-          cart = JSON.parse(cartData);
-          if (!Array.isArray(cart)) cart = [];
+        switch (functionName) {
+          case "menu_tool":
+            result = await handleMenuTool(args);
+            break;
+          case "welcome_tool":
+            result = await handleWelcomeTool(args);
+            break;
+          case "order_tool":
+            result = await handleOrderTool(args);
+            break;
+          case "confirmation_tool":
+            result = await handleConfirmationTool(args);
+            break;
+          case "location_tool":
+            result = await handleLocationTool(args);
+            break;
+          case "navigation_tool":
+            result = await handleNavigationTool(args);
+            break;
+          case "usual_order_tool":
+            result = await handleUsualOrderTool(args);
+            break;
+          case "ui_tool":
+            result = await handleUITool(args);
+            break;
+          default:
+            result = { error: `Unknown function: ${functionName}` };
         }
       } catch (error) {
-        console.error("Error reading cart:", error);
-        cart = [];
+        console.error(`Error executing ${functionName}:`, error);
+        result = { success: false, error: `Function execution failed: ${error.message || 'Unknown error'}` };
       }
       
-      // Check if the product is already in the cart
-      const existingItemIndex = cart.findIndex(item => item.id === productToAdd.id);
+      results.push({
+        tool_call_id: toolCall.id,
+        output: JSON.stringify(result)
+      });
+    }
+    
+    return results;
+  };
+  
+  // Handle menu tool functions
+  const handleMenuTool = async (args) => {
+    const { action, product_id, product_name, quantity = 1, show_menu } = args;
+    
+    // Retrieve products from localStorage
+    const getProducts = () => {
+      const menuItems = JSON.parse(localStorage.getItem('menuItems'));
       
-      if (existingItemIndex >= 0) {
-        // Update quantity if item exists
-        cart[existingItemIndex].quantity += quantity;
-      } else {
-        // Add a new item with quantity
-        cart.push({
-          ...productToAdd,
-          quantity
-        });
+      if (!menuItems) {
+        return [];
       }
       
-      // Save the cart
-      localStorage.setItem('cart', JSON.stringify(cart));
-      
-      // Update cart state
-      setCartItems(cart);
-      const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      setTotalPrice(total);
-      
-      // Dispatch custom event for cart updates
-      dispatchCartUpdate();
-      
-      return `Added ${quantity}x ${productToAdd.name} to your cart! Would you like anything else?`;
-    } catch (error) {
-      console.error("Error adding to cart:", error);
-      return "Sorry, I couldn't add that to your cart right now. Please try again later.";
-    }
-  };
-
-  // Function to get delivery locations with proper icons
-  const getDeliveryLocations = () => {
-    try {
-      // Try to get locations from localStorage
-      const storedLocations = localStorage.getItem('deliveryLocations');
-      if (storedLocations) {
-        return JSON.parse(storedLocations);
-      }
-    } catch (error) {
-      console.error("Error reading delivery locations:", error);
-    }
-    
-    // Use predefined locations with text icons (emojis)
-    return [
-      { id: 'loc1', name: 'Office 1', eta: 10, icon: '🏢' },
-      { id: 'loc2', name: 'Office 2', eta: 12, icon: '🏢' },
-      { id: 'loc3', name: 'Office 3', eta: 15, icon: '🏢' },
-      { id: 'loc4', name: 'Office 4', eta: 18, icon: '🏢' },
-      { id: 'loc5', name: 'Office 5', eta: 20, icon: '🏢' },
-      { id: 'loc6', name: 'Counter', eta: 5, icon: '🪑' },
-      { id: 'loc7', name: 'Outdoor Patio', eta: 8, icon: '🌳' },
-      { id: 'loc8', name: 'Delivery', eta: 25, icon: '🏠' }
-    ];
-  };
-
-  // Function to handle the "as usual" request
-  const handleUsualOrder = () => {
-    // Check if user has order history
-    if (!hasOrderHistory || frequentOrders.length === 0) {
-      return {
-        success: false,
-        message: "I don't see any previous orders from you yet. Would you like to see our menu so you can place your first order?"
-      };
-    }
-    
-    // Get the most frequently ordered item
-    const topItem = frequentOrders[0];
-    
-    // Add the top item to the cart
-    try {
-      // Create a clean cart with just the usual item
-      const usualOrder = [{
-        ...topItem,
-        quantity: 1
-      }];
-      
-      // Save to cart
-      localStorage.setItem('cart', JSON.stringify(usualOrder));
-      
-      // Update state
-      setCartItems(usualOrder);
-      setTotalPrice(topItem.price);
-      
-      // Dispatch event
-      dispatchCartUpdate();
-      
-      return {
-        success: true,
-        message: `I've added your usual order to the cart: 1 ${topItem.name}. Would you like to add anything else or proceed to checkout?`,
-        item: topItem
-      };
-    } catch (error) {
-      console.error("Error adding usual order to cart:", error);
-      return {
-        success: false,
-        message: "I'm sorry, I had trouble adding your usual order to the cart. Would you like to try ordering manually?"
-      };
-    }
-  };
-
-  // Function to add all frequent items to cart
-  const addAllFrequentItems = () => {
-    if (!hasOrderHistory || frequentOrders.length === 0) {
-      return {
-        success: false,
-        message: "You don't have any order history yet. Would you like to browse our menu?"
-      };
-    }
-    
-    try {
-      // Create cart with all frequent items
-      const frequentCart = frequentOrders.map(item => ({
-        ...item,
-        quantity: 1  // Start with quantity 1 for each item
-      }));
-      
-      // Save to cart
-      localStorage.setItem('cart', JSON.stringify(frequentCart));
-      
-      // Update state
-      setCartItems(frequentCart);
-      const total = frequentCart.reduce((sum, item) => sum + item.price, 0);
-      setTotalPrice(total);
-      
-      // Dispatch event
-      dispatchCartUpdate();
-      
-      // Create a readable list of items
-      const itemsList = frequentCart.map(item => item.name).join(', ');
-      
-      return {
-        success: true,
-        message: `I've added your favorite items to the cart: ${itemsList}. Would you like to proceed to checkout?`,
-        items: frequentCart
-      };
-    } catch (error) {
-      console.error("Error adding frequent items to cart:", error);
-      return {
-        success: false,
-        message: "I'm sorry, I had trouble adding your favorite items to the cart. Would you like to try ordering manually?"
-      };
-    }
-  };
-
-  // Function to suggest frequent orders
-  const suggestFrequentOrders = () => {
-    if (!hasOrderHistory || frequentOrders.length === 0) {
-      return {
-        success: false,
-        message: "I don't see any order history yet. Would you like me to help you with your first order?",
-        firstTime: true
-      };
-    }
-    
-    // Format suggestions
-    const suggestions = frequentOrders.map(item => `${item.name} ($${item.price.toFixed(2)})`).join(', ');
-    
-    return {
-      success: true,
-      message: `Based on your previous orders, you might like: ${suggestions}. Would you like me to add any of these to your cart?`,
-      items: frequentOrders
+      return menuItems;
     };
-  };
-
-  // Utility function to find a product in text
-  const findProductInText = (text) => {
-    const products = getAllProducts();
-    const normalizedText = text.toLowerCase();
     
-    // List of products to search for
-    const productNames = products.map(p => p.name.toLowerCase());
+    // Get cart from localStorage
+    const getCart = () => {
+      return JSON.parse(localStorage.getItem('cart')) || [];
+    };
     
-    // Find the first product mentioned in the text
-    for (const productName of productNames) {
-      if (normalizedText.includes(productName)) {
-        return productName;
-      }
-    }
-    
-    // More flexible search (partial words)
-    for (const product of products) {
-      const words = product.name.toLowerCase().split(' ');
-      for (const word of words) {
-        if (word.length > 3 && normalizedText.includes(word)) {
-          return product.name;
-        }
-      }
-    }
-    
-    return null;
-  };
-
-  // Function to remove a product from the cart
-  const removeFromCart = (productId) => {
-    try {
-      // Get current cart
-      const cart = JSON.parse(localStorage.getItem('cart')) || [];
-      
-      // Find the item to remove
-      const itemToRemove = cart.find(item => item.id === productId);
-      
-      if (!itemToRemove) {
-        return "Item not found in cart.";
-      }
-      
-      // Filter out the item
-      const updatedCart = cart.filter(item => item.id !== productId);
-      
-      // Save the cart
-      localStorage.setItem('cart', JSON.stringify(updatedCart));
-      
-      // Update local state
-      setCartItems(updatedCart);
-      const total = updatedCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      setTotalPrice(total);
-      
-      // Dispatch custom event for cart updates
-      dispatchCartUpdate();
-
-      return `Removed ${itemToRemove.name} from your cart.`;
-    } catch (error) {
-      console.error("Error removing from cart:", error);
-      return "Sorry, I couldn't remove that item from your cart right now.";
-    }
-  };
-
-  // Function to modify a product quantity
-  const updateItemQuantity = (productId, newQuantity) => {
-    try {
-      if (newQuantity <= 0) {
-        return removeFromCart(productId);
-      }
-
-      // Get current cart
-      const cart = JSON.parse(localStorage.getItem('cart')) || [];
-      
-      // Find the item to update
-      const itemIndex = cart.findIndex(item => item.id === productId);
-      
-      if (itemIndex === -1) {
-        return "Item not found in cart.";
-      }
-      
-      // Update the quantity
-      cart[itemIndex].quantity = newQuantity;
-      
-      // Save the cart
+    // Save cart to localStorage
+    const saveCart = (cart) => {
       localStorage.setItem('cart', JSON.stringify(cart));
       
-      // Update local state
-      setCartItems(cart);
-      const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      setTotalPrice(total);
+      // Trigger UI update
+      const event = new CustomEvent('cartUpdated', { 
+        detail: { cart: cart } 
+      });
+      window.dispatchEvent(event);
       
-      // Dispatch custom event for cart updates
-      dispatchCartUpdate();
-
-      return `Updated ${cart[itemIndex].name} quantity to ${newQuantity}.`;
-    } catch (error) {
-      console.error("Error updating quantity:", error);
-      return "Sorry, I couldn't update that item's quantity right now.";
+      return cart;
+    };
+    
+    // Find product by ID or name
+    const findProduct = (products, id, name) => {
+      if (!products || !Array.isArray(products)) {
+        return null;
+      }
+      
+      if (id) {
+        return products.find(p => p.id === id);
+      }
+      
+      if (name) {
+        const normalizedName = name.toLowerCase();
+        // Try exact match first
+        let product = products.find(p => p.name.toLowerCase() === normalizedName);
+        
+        // Then try partial match
+        if (!product) {
+          product = products.find(p => p.name.toLowerCase().includes(normalizedName));
+        }
+        
+        return product;
+      }
+      
+      return null;
+    };
+    
+    switch (action) {
+      case "get_products":
+        return { products: getProducts(), success: true };
+        
+      case "add_to_cart": {
+        const products = getProducts();
+        const cart = getCart();
+        
+        // Find product either by ID or by name
+        let productToAdd = findProduct(products, product_id, product_name);
+        
+        if (!productToAdd) {
+          return { 
+            success: false, 
+            error: "Product not found",
+            products: products
+          };
+        }
+        
+        // Check if item already exists in cart
+        const existingItemIndex = cart.findIndex(item => item.id === productToAdd.id);
+        
+        if (existingItemIndex >= 0) {
+          // Update quantity if item exists
+          cart[existingItemIndex].quantity += parseInt(quantity);
+        } else {
+          // Add new item with quantity
+          cart.push({
+            ...productToAdd,
+            quantity: parseInt(quantity)
+          });
+        }
+        
+        saveCart(cart);
+        
+        return {
+          success: true,
+          cart: cart,
+          product: productToAdd,
+          message: `Added ${quantity}x ${productToAdd.name} to your cart`
+        };
+      }
+      
+      case "update_quantity": {
+        if (!product_id) {
+          return { success: false, error: "Product ID is required" };
+        }
+        
+        const cart = getCart();
+        const existingItemIndex = cart.findIndex(item => item.id === product_id);
+        
+        if (existingItemIndex === -1) {
+          return { success: false, error: "Product not found in cart" };
+        }
+        
+        const product = cart[existingItemIndex];
+        
+        // If quantity is 0 or less, remove the item
+        if (quantity <= 0) {
+          cart.splice(existingItemIndex, 1);
+        } else {
+          // Otherwise, update the quantity
+          cart[existingItemIndex].quantity = quantity;
+        }
+        
+        saveCart(cart);
+        
+        return {
+          success: true,
+          cart: cart,
+          message: quantity <= 0 
+            ? `Removed ${product.name} from your cart` 
+            : `Updated ${product.name} quantity to ${quantity}`
+        };
+      }
+        
+      case "remove_from_cart": {
+        if (!product_id && !product_name) {
+          return { success: false, error: "Product ID or name is required" };
+        }
+        
+        const cart = getCart();
+        let updatedCart = [...cart];
+        let removedItem = null;
+        
+        if (product_id) {
+          removedItem = cart.find(item => item.id === product_id);
+          updatedCart = cart.filter(item => item.id !== product_id);
+        } else if (product_name) {
+          const normalizedName = product_name.toLowerCase();
+          removedItem = cart.find(item => item.name.toLowerCase().includes(normalizedName));
+          updatedCart = cart.filter(item => !item.name.toLowerCase().includes(normalizedName));
+        }
+        
+        saveCart(updatedCart);
+        
+        return {
+          success: true,
+          cart: updatedCart,
+          message: removedItem 
+            ? `${removedItem.name} removed from cart` 
+            : "Item removed from cart"
+        };
+      }
+        
+      case "get_cart":
+        return { 
+          cart: getCart(),
+          success: true,
+          total: getCart().reduce((sum, item) => sum + (item.price * item.quantity), 0)
+        };
+        
+      case "clear_cart":
+        saveCart([]);
+        return { 
+          success: true, 
+          message: "Cart cleared",
+          cart: []
+        };
+        
+      case "calculate_total": {
+        const cart = getCart();
+        const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        return { 
+          success: true,
+          total: total,
+          cart: cart
+        };
+      }
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
     }
   };
   
-  // Submit the user's message and get a response
+  // Handle welcome tool functions
+  const handleWelcomeTool = async (args) => {
+    const { action, user_name, preferences } = args;
+    
+    switch (action) {
+      case "get_user_info":
+        return { 
+          success: true, 
+          user_info: JSON.parse(localStorage.getItem('userInfo')) || {
+            name: '',
+            preferences: [],
+            isReturningUser: false
+          }
+        };
+        
+      case "update_user_info": {
+        const currentInfo = JSON.parse(localStorage.getItem('userInfo')) || {};
+        const updatedInfo = {
+          ...currentInfo,
+          ...(user_name ? { name: user_name } : {}),
+          ...(preferences ? { preferences } : {})
+        };
+        
+        localStorage.setItem('userInfo', JSON.stringify(updatedInfo));
+        
+        return { success: true, user_info: updatedInfo };
+      }
+        
+      case "play_welcome_sound":
+        if (audioRef.current && !isMuted) {
+          try {
+            await audioRef.current.play();
+            return { success: true, message: "Welcome sound played" };
+          } catch (error) {
+            return { success: false, error: "Failed to play welcome sound" };
+          }
+        }
+        return { success: false, error: "Audio not available or muted" };
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle order tool functions
+  const handleOrderTool = async (args) => {
+    const { action, order_id, new_status } = args;
+    
+    switch (action) {
+      case "create_order":
+      case "place_order": {
+        const cart = JSON.parse(localStorage.getItem('cart')) || [];
+        
+        if (cart.length === 0) {
+          return { 
+            success: false, 
+            error: "Cart is empty",
+            message: "Your cart is empty. Please add items before placing an order."
+          };
+        }
+        
+        const order = {
+          id: `ORD-${Date.now().toString().slice(-6)}`,
+          items: cart,
+          status: 'Processing',
+          timestamp: new Date().toISOString(),
+          total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+          estimatedDelivery: new Date(Date.now() + 20 * 60000).toISOString()
+        };
+        
+        localStorage.setItem('currentOrder', JSON.stringify(order));
+        setCurrentOrder(order);
+        
+        // Get locations to show immediately
+        const locationsResult = await handleLocationTool({ action: "get_delivery_locations" });
+
+        // Vider le panier après avoir créé la commande
+        localStorage.setItem('cart', JSON.stringify([]));
+
+        // Envoyer un événement pour mettre à jour l'interface
+        const event = new CustomEvent('cartUpdated', { 
+          detail: { cart: [] } 
+        });
+        window.dispatchEvent(event);
+        
+        return { 
+          success: true, 
+          order: order,
+          show_locations: true,
+          locations: locationsResult.locations,
+          message: "Order created successfully. Please select a delivery location."
+        };
+      }
+        
+      case "get_order": {
+        const currentOrder = JSON.parse(localStorage.getItem('currentOrder'));
+        return { 
+          success: true, 
+          order: currentOrder,
+          has_order: !!currentOrder
+        };
+      }
+        
+      case "update_order_status": {
+        if (!order_id || !new_status) {
+          return { success: false, error: "Order ID and new status are required" };
+        }
+        
+        const currentOrder = JSON.parse(localStorage.getItem('currentOrder'));
+        
+        if (!currentOrder || currentOrder.id !== order_id) {
+          return { success: false, error: "Order not found" };
+        }
+        
+        currentOrder.status = new_status;
+        localStorage.setItem('currentOrder', JSON.stringify(currentOrder));
+        setCurrentOrder(currentOrder);
+        
+        return { success: true, order: currentOrder };
+      }
+        
+      case "get_order_history":
+        return { 
+          success: true, 
+          history: JSON.parse(localStorage.getItem('orderHistory')) || []
+        };
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle confirmation tool functions
+  const handleConfirmationTool = async (args) => {
+    const { action, order_id } = args;
+    
+    switch (action) {
+      case "confirm_order": {
+        if (!order_id) {
+          return { success: false, error: "Order ID is required" };
+        }
+        
+        const currentOrder = JSON.parse(localStorage.getItem('currentOrder'));
+        
+        if (!currentOrder || currentOrder.id !== order_id) {
+          return { success: false, error: "Order not found" };
+        }
+        
+        const confirmedOrder = {
+          ...currentOrder,
+          status: 'Confirmed',
+          confirmedAt: new Date().toISOString()
+        };
+        
+        localStorage.setItem('currentOrder', JSON.stringify(confirmedOrder));
+        setCurrentOrder(confirmedOrder);
+        
+        // Add to order history
+        const history = JSON.parse(localStorage.getItem('orderHistory')) || [];
+        history.push(confirmedOrder);
+        localStorage.setItem('orderHistory', JSON.stringify(history));
+        
+        // Clear cart
+        localStorage.setItem('cart', JSON.stringify([]));
+        const event = new CustomEvent('cartUpdated', { 
+          detail: { cart: [] } 
+        });
+        window.dispatchEvent(event);
+
+        
+        // If no delivery location, get locations to show immediately
+        if (!confirmedOrder.deliveryLocation) {
+          const locationsResult = await handleLocationTool({ action: "get_delivery_locations" });
+          
+          return { 
+            success: true, 
+            order: confirmedOrder,
+            show_locations: true,
+            locations: locationsResult.locations,
+            message: "Order confirmed. Please select a delivery location."
+          };
+        }
+        
+        return { success: true, order: confirmedOrder };
+      }
+        
+      case "cancel_order": {
+        if (!order_id) {
+          return { success: false, error: "Order ID is required" };
+        }
+        
+        const currentOrder = JSON.parse(localStorage.getItem('currentOrder'));
+        
+        if (!currentOrder || currentOrder.id !== order_id) {
+          return { success: false, error: "Order not found" };
+        }
+        
+        localStorage.removeItem('currentOrder');
+        setCurrentOrder(null);
+        
+        return { success: true, message: "Order cancelled" };
+      }
+        
+      case "ask_confirmation": {
+        return { 
+          success: true,
+          show_confirmation: true,
+          message: "Confirmation requested"
+        };
+      }
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle location tool functions
+  const handleLocationTool = async (args) => {
+    const { action, order_id, location_id } = args;
+    
+    // Get delivery locations from localStorage or defaults
+    const getDeliveryLocations = () => {
+      return JSON.parse(localStorage.getItem('deliveryLocations')) || [
+        { id: 'loc1', name: 'Office 1', eta: 10, icon: '🏢' },
+        { id: 'loc2', name: 'Office 2', eta: 12, icon: '🏢' },
+        { id: 'loc3', name: 'Office 3', eta: 15, icon: '🏢' },
+        { id: 'loc4', name: 'Office 4', eta: 18, icon: '🏢' },
+        { id: 'loc5', name: 'Office 5', eta: 20, icon: '🏢' },
+        { id: 'loc6', name: 'Counter', eta: 5, icon: '🪑' },
+        { id: 'loc7', name: 'Outdoor Patio', eta: 8, icon: '🌳' },
+        { id: 'loc8', name: 'Delivery', eta: 25, icon: '🏠' }
+      ];
+    };
+    
+    switch (action) {
+      case "get_delivery_locations":
+        return { 
+          success: true,
+          locations: getDeliveryLocations()
+        };
+        
+        case "set_delivery_location": {
+          if (!location_id) {
+            return { success: false, error: "Location ID is required" };
+          }
+          
+          const locations = getDeliveryLocations();
+          const selectedLocation = locations.find(loc => loc.id === location_id);
+          
+          if (!selectedLocation) {
+            return { success: false, error: "Location not found" };
+          }
+          
+          let currentOrder = JSON.parse(localStorage.getItem('currentOrder'));
+          
+          // If order_id is provided, verify it matches the current order
+          if (order_id && currentOrder && currentOrder.id !== order_id) {
+            return { success: false, error: "Order ID mismatch" };
+          }
+          
+          // If no current order but location is selected, create an order from cart
+          if (!currentOrder) {
+            const cart = JSON.parse(localStorage.getItem('cart')) || [];
+            
+            if (cart.length === 0) {
+              return { success: false, error: "Cart is empty, cannot create order" };
+            }
+            
+            currentOrder = {
+              id: `ORD-${Date.now().toString().slice(-6)}`,
+              items: cart,
+              status: 'Processing',
+              timestamp: new Date().toISOString(),
+              total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+            };
+          }
+          
+          const updatedOrder = {
+            ...currentOrder,
+            deliveryLocation: selectedLocation,
+            estimatedDelivery: new Date(Date.now() + selectedLocation.eta * 60000).toISOString()
+          };
+          
+          localStorage.setItem('currentOrder', JSON.stringify(updatedOrder));
+          setCurrentOrder(updatedOrder);
+
+          localStorage.setItem('cart', JSON.stringify([]));
+          const event = new CustomEvent('cartUpdated', { 
+            detail: { cart: [] } 
+          });
+          window.dispatchEvent(event);
+
+          fetch('https://2e19-41-216-98-178.ngrok-free.app/api/delivery/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interface_name: "en7" })
+          })
+          .then(response => response.json())
+          .then(data => {
+            console.log('Tracking started:', data)
+            navigate('/robot');
+          })
+          .catch(error => console.error('Error starting tracking:', error));
+          
+          return { 
+            success: true,
+            order: updatedOrder,
+            location: selectedLocation,
+            message: `Delivery location set to ${selectedLocation.name}. Estimated delivery time: ${selectedLocation.eta} minutes.`
+          };
+        }
+        
+      case "show_location_options":
+        return {
+          success: true,
+          show_locations: true,
+          locations: getDeliveryLocations()
+        };
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle navigation tool functions
+  const handleNavigationTool = async (args) => {
+    const { action } = args;
+    
+    switch (action) {
+      case "redirect_to_cart":
+        // Close the chatbot and navigate to cart page
+        setIsOpen(false);
+        navigate('/cart');
+        return { success: true, message: "Redirecting to cart" };
+        
+      case "redirect_to_tracking":
+        // Close the chatbot and navigate to tracking page
+        setIsOpen(false);
+
+        return { success: true, message: "Redirecting to tracking" };
+        
+      case "redirect_to_menu":
+        // Close the chatbot and navigate to menu page
+        setIsOpen(false);
+        navigate('/menu');
+        return { success: true, message: "Redirecting to menu" };
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle usual order tool functions
+  const handleUsualOrderTool = async (args) => {
+    const { action } = args;
+    
+    switch (action) {
+      case "get_frequent_orders": {
+        const orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
+        
+        if (orderHistory.length === 0) {
+          return { success: true, frequent_orders: [], has_history: false };
+        }
+        
+        // Count occurrences of each product
+        const productCounts = {};
+        
+        orderHistory.forEach(order => {
+          if (order.items && Array.isArray(order.items)) {
+            order.items.forEach(item => {
+              if (!productCounts[item.id]) {
+                productCounts[item.id] = {
+                  ...item,
+                  count: 0,
+                  lastOrdered: null
+                };
+              }
+              productCounts[item.id].count += item.quantity;
+              productCounts[item.id].lastOrdered = order.timestamp;
+            });
+          }
+        });
+        
+        // Convert to array and sort by count
+        const frequentProducts = Object.values(productCounts)
+          .sort((a, b) => b.count - a.count);
+          
+        return { 
+          success: true,
+          frequent_orders: frequentProducts.slice(0, 3),
+          has_history: true
+        };
+      }
+        
+      case "get_time_recommendations": {
+        const hour = new Date().getHours();
+        const dayOfWeek = new Date().getDay();
+        
+        // Time-based recommendations
+        let timeBasedRecs = [];
+        
+        if (hour >= 6 && hour < 11) {
+          // Morning recommendations
+          timeBasedRecs = [
+            {id: '2', name: 'Cappuccino', recommendation: 'Perfect breakfast coffee', price: 4.0},
+            {id: '11', name: 'Croissant', recommendation: 'Fresh baked this morning', price: 3.0}
+          ];
+        } else if (hour >= 11 && hour < 14) {
+          // Lunch time
+          timeBasedRecs = [
+            {id: '3', name: 'Latte', recommendation: 'Great with lunch', price: 4.5},
+            {id: '11', name: 'Croissant', recommendation: 'Fresh and flaky', price: 3.0}
+          ];
+        } else if (hour >= 14 && hour < 18) {
+          // Afternoon
+          timeBasedRecs = [
+            {id: '1', name: 'Espresso', recommendation: 'Afternoon pick-me-up', price: 2.5},
+            {id: '11', name: 'Croissant', recommendation: 'Afternoon snack', price: 3.0}
+          ];
+        } else {
+          // Evening
+          timeBasedRecs = [
+            {id: '3', name: 'Latte', recommendation: 'Evening comfort', price: 4.5},
+            {id: '11', name: 'Croissant', recommendation: 'Evening treat', price: 3.0}
+          ];
+        }
+        
+        // Weekend vs Weekday recommendations
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          // Weekend special
+          timeBasedRecs.push({
+            id: '2', name: 'Cappuccino', recommendation: 'Weekend special', price: 4.0
+          });
+        }
+        
+        return { 
+          success: true,
+          recommendations: timeBasedRecs,
+          time_of_day: hour < 12 ? 'morning' : (hour < 18 ? 'afternoon' : 'evening'),
+          is_weekend: dayOfWeek === 0 || dayOfWeek === 6
+        };
+      }
+        
+      case "create_usual_order": {
+        const frequentOrdersResult = await handleUsualOrderTool({ action: "get_frequent_orders" });
+        
+        if (!frequentOrdersResult.has_history || frequentOrdersResult.frequent_orders.length === 0) {
+          return { 
+            success: false, 
+            error: "No order history found",
+            has_recommendations: true,
+            recommendations: (await handleUsualOrderTool({ action: "get_time_recommendations" })).recommendations
+          };
+        }
+        
+        // Add top item to cart
+        const topItem = frequentOrdersResult.frequent_orders[0];
+        const usualItems = [{
+          ...topItem,
+          quantity: 1
+        }];
+        
+        localStorage.setItem('cart', JSON.stringify(usualItems));
+        
+        // Trigger UI update
+        const event = new CustomEvent('cartUpdated', { 
+          detail: { cart: usualItems } 
+        });
+        window.dispatchEvent(event);
+        
+        return { 
+          success: true,
+          items: usualItems,
+          message: `Added your usual ${topItem.name} to cart`
+        };
+      }
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+  
+  // Handle UI tool functions
+  const handleUITool = async (args) => {
+    const { action, language: newLanguage } = args;
+    
+    switch (action) {
+      case "toggle_chat_size":
+        setIsExpanded(!isExpanded);
+        return { 
+          success: true,
+          is_expanded: !isExpanded,
+          message: !isExpanded ? "Chat expanded" : "Chat collapsed"
+        };
+        
+      case "toggle_sound_mute":
+        setIsMuted(!isMuted);
+        return { 
+          success: true,
+          is_muted: !isMuted,
+          message: !isMuted ? "Sound muted" : "Sound unmuted"
+        };
+      
+      case "change_language":
+        if (newLanguage) {
+          setLanguage(newLanguage);
+          return {
+            success: true,
+            language: newLanguage,
+            message: `Language changed to ${getLanguageName(newLanguage)}`
+          };
+        }
+        return {
+          success: false,
+          error: "No language specified"
+        };
+        
+      default:
+        return { success: false, error: `Unknown action: ${action}` };
+    }
+  };
+
+  // Helper function to get language name from code
+  const getLanguageName = (code) => {
+    const languageMap = {
+      'en': 'English',
+      'fr': 'French',
+      'es': 'Spanish',
+      'de': 'German',
+      'it': 'Italian',
+      'ja': 'Japanese',
+      'zh': 'Chinese',
+      'ar': 'Arabic'
+    };
+    return languageMap[code] || code;
+  };
+  
+  // Get available languages
+  const getAvailableLanguages = () => {
+    return [
+      { code: 'en', name: 'English' },
+      { code: 'fr', name: 'Français' },
+      { code: 'es', name: 'Español' },
+      { code: 'de', name: 'Deutsch' },
+      { code: 'it', name: 'Italiano' },
+      { code: 'ja', name: '日本語' },
+      { code: 'zh', name: '中文' },
+      { code: 'ar', name: 'العربية' }
+    ];
+  };
+  
+  // Add event listener for cart updates
+  useEffect(() => {
+    const handleCartUpdated = (event) => {
+      const updatedCart = event.detail.cart;
+      
+      setMessages(prev => {
+        // Find the message containing the cart and update it
+        const newMessages = [...prev];
+        
+        for (let i = newMessages.length - 1; i >= 0; i--) {
+          if (newMessages[i].toolResults) {
+            const toolResponses = newMessages[i].toolResults.map(result => {
+              try {
+                const output = JSON.parse(result.output);
+                if (output.cart) {
+                  // Update the cart
+                  const newOutput = { 
+                    ...output, 
+                    cart: updatedCart,
+                    total: updatedCart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                  };
+                  return { ...result, output: JSON.stringify(newOutput) };
+                }
+                return result;
+              } catch (e) {
+                console.error("Error updating cart in tool result:", e);
+                return result;
+              }
+            });
+            
+            if (toolResponses.some(r => {
+              try {
+                return JSON.parse(r.output).cart;
+              } catch (e) {
+                return false;
+              }
+            })) {
+              newMessages[i] = { ...newMessages[i], toolResults: toolResponses };
+              break;
+            }
+          }
+        }
+        
+        return newMessages;
+      });
+    };
+    
+    window.addEventListener('cartUpdated', handleCartUpdated);
+    return () => window.removeEventListener('cartUpdated', handleCartUpdated);
+  }, []);
+  
+  // Submit user message and get AI response
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (inputValue.trim() === '') return;
     
-    // Add the user's message
+    // Add user message
     const userMessage = {
       id: Date.now().toString(),
       sender: 'user',
@@ -626,171 +1253,182 @@ const Chatbot = () => {
     
     saveMessage(userMessage);
     setMessages(prev => [...prev, userMessage]);
-    
-    // Keep a copy of the message and clear the input
-    const userInput = inputValue.toLowerCase();
     setInputValue('');
     setIsLoading(true);
     
     try {
-      // Process the user message with simplified logic
-      let botResponseText = '';
-      let shouldShowCart = false;
-      let shouldShowLocations = false;
-      let shouldShowUsualItems = false;
+      // Get conversation history for context
+      const recentMessages = messages.slice(-5).map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      }));
       
-      // Check for "as usual" or similar phrases
-      if (userInput.includes('as usual') || 
-          userInput.includes('the usual') || 
-          userInput.includes('my usual') || 
-          userInput.includes('regular order') ||
-          userInput.includes('same as always') ||
-          userInput.includes('same as last time')) {
-        
-        const usualOrderResult = handleUsualOrder();
-        botResponseText = usualOrderResult.message;
-        shouldShowCart = usualOrderResult.success;
-      }
-      // Check for frequent orders or recommendations
-      else if (userInput.includes('recommend') || 
-               userInput.includes('suggestion') || 
-               userInput.includes('popular') ||
-               userInput.includes('what do people order') ||
-               userInput.includes('what should i get')) {
-        
-        const suggestions = suggestFrequentOrders();
-        botResponseText = suggestions.message;
-        shouldShowUsualItems = suggestions.success && !suggestions.firstTime;
-      } 
-      // Check for favorite orders
-      else if (userInput.includes('my favorite') || 
-               userInput.includes('i usually get') ||
-               userInput.includes('my favorites')) {
+      // Add current user message
+      recentMessages.push({
+        role: 'user',
+        content: inputValue
+      });
       
-        const favorites = suggestFrequentOrders();
-        if (favorites.success) {
-          botResponseText = `Your favorite items are: ${favorites.items.map(item => item.name).join(', ')}. Would you like me to add them to your cart?`;
-          shouldShowUsualItems = true;
-        } else {
-          botResponseText = favorites.message;
-        }
-      }
-      // Standard keyword processing
-      else if (userInput.includes('hello') || userInput.includes('hi') || userInput.includes('hey')) {
-        botResponseText = "Hello! How can I help you today? Would you like to see our menu, order something, or check your cart?";
-      } 
-      else if (userInput.includes('menu') || userInput.includes('what do you have') || userInput.includes('what can i order')) {
-        botResponseText = "Here's our menu:\n\n☕ **Coffee**\n- Espresso ($2.50)\n- Cappuccino ($3.50)\n- Latte ($3.75)\n- Americano ($2.75)\n- Mocha ($4.25)\n\n🍵 **Tea**\n- Earl Grey ($2.25)\n- Green Tea ($2.25)\n- Chamomile ($2.50)\n\n🥐 **Pastries**\n- Croissant ($2.95)\n- Chocolate Muffin ($3.25)\n- Blueberry Scone ($3.50)\n\nWhat would you like to order?";
-      }
-      else if (userInput.includes('cart') || userInput.includes('show cart') || userInput.includes('my order')) {
-        shouldShowCart = true;
-        if (cartItems.length === 0) {
-          botResponseText = "Your cart is currently empty. Would you like to see our menu to add something?";
-        } else {
-          botResponseText = "Here's your current cart. You can adjust quantities or proceed to checkout.";
-        }
-      }
-      else if (userInput.includes('location') || userInput.includes('deliver') || userInput.includes('where')) {
-        shouldShowLocations = true;
-        botResponseText = "Where would you like your order to be delivered? Please select a location:";
-      }
-      else if (userInput.includes('espresso')) {
-        const response = addToCart('Espresso');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('cappuccino')) {
-        const response = addToCart('Cappuccino');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('latte')) {
-        const response = addToCart('Latte');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('americano')) {
-        const response = addToCart('Americano');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('mocha')) {
-        const response = addToCart('Mocha');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('earl grey') || userInput.includes('earl gray')) {
-        const response = addToCart('Earl Grey');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('green tea')) {
-        const response = addToCart('Green Tea');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('chamomile')) {
-        const response = addToCart('Chamomile');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('croissant')) {
-        const response = addToCart('Croissant');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('muffin') || userInput.includes('chocolate muffin')) {
-        const response = addToCart('Chocolate Muffin');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('scone') || userInput.includes('blueberry scone')) {
-        const response = addToCart('Blueberry Scone');
-        botResponseText = response + " Would you like anything else?";
-        shouldShowCart = true;
-      }
-      else if (userInput.includes('checkout') || userInput.includes('pay') || userInput.includes('place order')) {
-        if (cartItems.length === 0) {
-          botResponseText = "Your cart is empty. Please add items before checking out.";
-        } else {
-          botResponseText = "Great! To complete your order, please choose a delivery location.";
-          shouldShowLocations = true;
-        }
-      }
-      else if (userInput.includes('thank')) {
-        botResponseText = "You're welcome! Is there anything else I can help you with?";
-      }
-      else {
-        botResponseText = "I'm not sure I understand. Would you like to see our menu, check your cart, or place an order?";
-      }
+      // Get user info for personalization
+      const userData = JSON.parse(localStorage.getItem('userInfo')) || {};
+      
+      // Get current cart and order info for context
+      const currentCartInfo = await handleMenuTool({ action: "get_cart" });
+      const currentOrderInfo = await handleOrderTool({ action: "get_order" });
+      
+      // Create initial OpenAI request
+      const chatCompletion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a helpful Neo Café assistant. Be friendly, concise, and personalized.
+              
+              Current date and time: ${new Date().toLocaleString()}
+              Current language: ${getLanguageName(language)}
+              ${userData.name ? `User's name: ${userData.name}` : ''}
+              ${userData.preferences && userData.preferences.length > 0 ? 
+                `User's preferences: ${userData.preferences.join(', ')}` : ''}
+                
+              Cart status: ${currentCartInfo.cart.length > 0 ? 
+                `Contains ${currentCartInfo.cart.length} items. Total: $${currentCartInfo.total.toFixed(2)}` : 
+                'Empty'}
+              
+              Order status: ${currentOrderInfo.has_order ? 
+                `Order ${currentOrderInfo.order.id} - Status: ${currentOrderInfo.order.status}` : 
+                'No active order'}
 
+              Location list: $ {[
+                { id: 'loc1', name: 'Office 1', eta: 10, icon: '🏢' },
+                { id: 'loc2', name: 'Office 2', eta: 12, icon: '🏢' },
+                { id: 'loc3', name: 'Office 3', eta: 15, icon: '🏢' },
+                { id: 'loc4', name: 'Office 4', eta: 18, icon: '🏢' },
+                { id: 'loc5', name: 'Office 5', eta: 20, icon: '🏢' },
+                { id: 'loc6', name: 'Counter', eta: 5, icon: '🪑' },
+                { id: 'loc7', name: 'Outdoor Patio', eta: 8, icon: '🌳' },
+                { id: 'loc8', name: 'Delivery', eta: 25, icon: '🏠' }
+              ]}
+                
+              IMPORTANT INSTRUCTIONS:
+              - Always use tools when appropriate to interact with the system.
+              - When user wants to add multiple items, use the correct quantity in the menu_tool action.
+              - When user asks to remove or modify quantities, use the specific product_id or product_name.
+              - If user mentions placing, completing, or finalizing an order, use order_tool with action "place_order".
+              - When a user confirms an order, automatically show location options.
+              - Your responses should be in the user's chosen language (${language}).
+              
+              You can help users switch languages using the ui_tool with the change_language action.
+              Format your responses using Markdown for better readability.
+              `
+          },
+          ...recentMessages
+        ],
+        tools: getOpenAITools(),
+        tool_choice: "auto"
+      });
+      
+      // Process response
+      let responseToUser = chatCompletion.choices[0].message;
+      
+      // Handle tool calls if any
+      if (responseToUser.tool_calls && responseToUser.tool_calls.length > 0) {
+        try {
+          // Execute tool calls
+          const toolResults = await handleToolFunctions(responseToUser.tool_calls);
+          
+          // Check if there are locations to show from tool results
+          const hasLocationOptions = toolResults.some(result => {
+            try {
+              const output = JSON.parse(result.output);
+              return output.show_locations === true;
+            } catch (e) {
+              return false;
+            }
+          });
+          
+          // If order was created or confirmed but no location options shown,
+          // add location options automatically
+          const needsLocationOptions = toolResults.some(result => {
+            try {
+              const output = JSON.parse(result.output);
+              if (output.success && output.order && !output.show_locations && 
+                  (output.order.status === 'Processing' || output.order.status === 'Confirmed') && 
+                  !output.order.deliveryLocation) {
+                return true;
+              }
+              return false;
+            } catch (e) {
+              return false;
+            }
+          });
+          
+          if (needsLocationOptions && !hasLocationOptions) {
+            // Add location options
+            const locationResult = await handleLocationTool({ action: "show_location_options" });
+            toolResults.push({
+              tool_call_id: `location-${Date.now()}`,
+              output: JSON.stringify(locationResult)
+            });
+          }
+          
+          // Get final response with tool results
+          const finalResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: `You are a helpful Neo Café assistant. Be friendly, concise, and personalized. 
+                Respond in the user's chosen language (${language}).
+                
+                If locations are being shown, always encourage the user to select a delivery location.`
+              },
+              ...recentMessages,
+              responseToUser,
+              ...toolResults.map(result => ({
+                role: "tool",
+                tool_call_id: result.tool_call_id,
+                content: result.output
+              }))
+            ]
+          });
+          
+          responseToUser = finalResponse.choices[0].message;
+        } catch (error) {
+          console.error("Error processing tool calls:", error);
+          throw new Error("Failed to process tools: " + (error.message || "Unknown error"));
+        }
+      }
+      
       // Create bot response
       const botResponse = {
-        id: Date.now().toString() + 1,
+        id: Date.now().toString(),
         sender: 'bot',
-        text: botResponseText,
+        text: responseToUser.content,
         timestamp: new Date().toISOString(),
-        showCart: shouldShowCart,
-        showLocations: shouldShowLocations,
-        showUsualItems: shouldShowUsualItems,
-        frequentItems: shouldShowUsualItems ? frequentOrders : []
+        // Store any tool call results for rendering
+        toolResults: responseToUser.tool_calls ? await handleToolFunctions(responseToUser.tool_calls) : null
       };
       
       saveMessage(botResponse);
       setMessages(prev => [...prev, botResponse]);
       
-      // Update the conversation list
+      // Update conversations list
       const updatedHistory = [...messages, userMessage, botResponse];
       setConversations(groupMessagesByConversation(updatedHistory));
       
+      // Update current order if changed
+      const savedOrder = JSON.parse(localStorage.getItem('currentOrder'));
+      if (savedOrder && (!currentOrder || savedOrder.id !== currentOrder.id)) {
+        setCurrentOrder(savedOrder);
+      }
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('Error getting chatbot response:', error);
       
-      // Add an error message
+      // Add error message
       const errorResponse = {
-        id: Date.now().toString() + 1,
+        id: Date.now().toString(),
         sender: 'bot',
-        text: "I'm having trouble understanding. Could you please try again?",
+        text: "I'm sorry, I couldn't process your request. Please try again later.",
         timestamp: new Date().toISOString()
       };
       
@@ -818,102 +1456,211 @@ const Chatbot = () => {
       setShowHistory(false);
     }
   };
-
-  // Handle click on a delivery location
-  const handleLocationSelect = (location) => {
-    // Create or update the order
-    if (cartItems.length > 0) {
-      const order = {
-        id: `ORD-${Date.now().toString().slice(-6)}`,
-        items: cartItems,
-        status: 'Processing',
-        timestamp: new Date().toISOString(),
-        total: totalPrice,
-        location: location,
-        estimatedDelivery: new Date(Date.now() + location.eta * 60000).toISOString()
-      };
-      
-      localStorage.setItem('currentOrder', JSON.stringify(order));
-      setCurrentOrder(order);
-      
-      // Add to order history for future "as usual" functionality
-      try {
-        const orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
-        orderHistory.push(order);
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-        
-        // Update the frequent orders
-        setHasOrderHistory(true);
-        loadOrderHistory();
-      } catch (error) {
-        console.error("Error saving to order history:", error);
-      }
-      
-      // Add a confirmation message
-      const confirmationMessage = {
-        id: Date.now().toString(),
-        sender: 'bot',
-        text: `Thank you! Your order has been placed and will be delivered to ${location.name} in approximately ${location.eta} minutes. Your order number is ${order.id}.`,
-        timestamp: new Date().toISOString(),
-        showOrder: true,
-        order: order
-      };
-      
-      saveMessage(confirmationMessage);
-      setMessages(prev => [...prev, confirmationMessage]);
-      
-      // Clear the cart
-      localStorage.setItem('cart', JSON.stringify([]));
-      setCartItems([]);
-      setTotalPrice(0);
-      
-      // Dispatch custom event for cart updates
-      dispatchCartUpdate();
-    }
-  };
-
-  // Navigate to tracking page
-  const navigateToTracking = () => {
-    setIsOpen(false);
-    navigate('/robot');
-  };
-  
-  // Handle adding a frequent item to cart
-  const handleAddFrequentItem = (item) => {
-    addToCart(item.name);
-    
-    // Add a confirmation message
-    const confirmationMessage = {
-      id: Date.now().toString(),
-      sender: 'bot',
-      text: `I've added 1 ${item.name} to your cart. Would you like anything else or are you ready to proceed to checkout?`,
-      timestamp: new Date().toISOString(),
-      showCart: true
-    };
-    
-    saveMessage(confirmationMessage);
-    setMessages(prev => [...prev, confirmationMessage]);
-  };
-  
-  // Handle adding all frequent items to cart
-  const handleAddAllFrequentItems = () => {
-    const result = addAllFrequentItems();
-    
-    // Add a confirmation message
-    const confirmationMessage = {
-      id: Date.now().toString(),
-      sender: 'bot',
-      text: result.message,
-      timestamp: new Date().toISOString(),
-      showCart: result.success
-    };
-    
-    saveMessage(confirmationMessage);
-    setMessages(prev => [...prev, confirmationMessage]);
-  };
   
   // Render a bot message
   const renderBotMessage = (message) => {
+    // Check if message has special tool results that need custom rendering
+    if (message.toolResults) {
+      try {
+        // Parse the tool results to determine what UI components to show
+        const toolResponses = message.toolResults.map(result => {
+          try {
+            return JSON.parse(result.output);
+          } catch (e) {
+            console.error("Error parsing tool result:", e);
+            return {};
+          }
+        });
+        
+        // Find specific results we might want to render specially
+        const locationResult = toolResponses.find(r => r.show_locations);
+        const cartResult = toolResponses.find(r => r.cart && r.cart.length > 0);
+        const orderResult = toolResponses.find(r => r.order);
+        const usualOrderResult = toolResponses.find(r => r.items && r.items.length > 0);
+        
+        // Render custom components based on tool results
+        return (
+          <div className="flex items-start flex-row">
+            <div className="rounded-full p-2 mx-2 flex-shrink-0 bg-gray-200 text-gray-700">
+              <FaRobot size={14} />
+            </div>
+            
+            <div>
+              <div className="inline-block rounded-lg px-4 py-2 bg-gray-100 text-gray-800 max-w-[280px]">
+                {/* Render the message text - support for basic markdown */}
+                <div className="mb-3 markdown-content">
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+                    {message.text}
+                  </ReactMarkdown>
+                </div>
+                
+                {/* Render location selection if present */}
+                {locationResult && locationResult.show_locations && (
+                  <div className="mt-3">
+                    <p className="font-medium mb-2">Select a delivery location:</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {locationResult.locations && locationResult.locations.map(location => (
+                        <button
+                          key={location.id}
+                          onClick={() => handleLocationTool({
+                            action: "set_delivery_location",
+                            order_id: currentOrder?.id || "new_order",
+                            location_id: location.id
+                          })}
+                          className="bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 px-3 rounded flex items-center justify-between"
+                        >
+                          <span>{location.name}</span>
+                          <span className="text-xs bg-white text-coffee-dark rounded-full px-2 py-1">
+                            {location.eta} min
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Render cart if present */}
+                {cartResult && cartResult.cart && cartResult.cart.length > 0 && (
+                  <div className="mt-3">
+                    <p className="font-medium mb-2">Your cart:</p>
+                    <div className="bg-white rounded p-2">
+                      {cartResult.cart.map(item => (
+                        <div key={item.id} className="flex justify-between items-center py-1">
+                          <div className="flex items-center">
+                            <span>{item.quantity}x {item.name}</span>
+                            <div className="flex ml-2">
+                              <button 
+                                onClick={() => handleMenuTool({
+                                  action: "add_to_cart",
+                                  product_id: item.id,
+                                  quantity: 1
+                                })}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 rounded-l p-1 text-gray-700"
+                              >
+                                <FaPlus size={8} />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  if (item.quantity > 1) {
+                                    // Reduce quantity
+                                    handleMenuTool({
+                                      action: "update_quantity",
+                                      product_id: item.id,
+                                      quantity: item.quantity - 1
+                                    });
+                                  } else {
+                                    // If quantity = 1, remove the item
+                                    handleMenuTool({
+                                      action: "remove_from_cart",
+                                      product_id: item.id
+                                    });
+                                  }
+                                }}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 rounded-r p-1 text-gray-700"
+                              >
+                                <FaMinus size={8} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="mr-2">${(item.price * item.quantity).toFixed(2)}</span>
+                            <button
+                              onClick={() => handleMenuTool({
+                                action: "remove_from_cart",
+                                product_id: item.id
+                              })}
+                              className="text-xs text-red-500 hover:text-red-700"
+                              title="Remove item"
+                            >
+                              <FaTrash size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="border-t mt-2 pt-2 font-medium flex justify-between">
+                        <span>Total:</span>
+                        <span>${cartResult.total ? cartResult.total.toFixed(2) : '0.00'}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex space-x-2 mt-2">
+                      <button 
+                        onClick={() => handleOrderTool({ 
+                          action: "place_order"
+                        })}
+                        className="flex-1 bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 px-4 rounded flex items-center justify-center"
+                      >
+                        <FaShoppingCart className="mr-2" /> Place Order
+                      </button>
+                      <button 
+                        onClick={() => handleMenuTool({ action: "clear_cart" })}
+                        className="flex-1 border border-red-500 text-red-500 hover:bg-red-500 hover:text-white py-2 px-4 rounded flex items-center justify-center transition-colors"
+                      >
+                        Clear Cart
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Render usual order suggestions if present */}
+                {usualOrderResult && usualOrderResult.items && (
+                  <div className="mt-3">
+                    <p className="font-medium mb-2">Your favorites:</p>
+                    <div className="space-y-2">
+                      {usualOrderResult.items.map(item => (
+                        <div key={item.id} className="bg-white rounded-lg p-2 shadow-sm flex justify-between items-center">
+                          <div className="flex items-center">
+                            <FaStar className="text-yellow-500 mr-2" size={14} />
+                            <div>
+                              <div className="font-medium">{item.name}</div>
+                              <div className="text-xs text-gray-500">${item.price.toFixed(2)}</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleMenuTool({
+                              action: "add_to_cart",
+                              product_id: item.id,
+                              quantity: 1
+                            })}
+                            className="bg-[#4B2E2B] text-white rounded px-2 py-1 text-xs"
+                          >
+                            Add to cart
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Render tracking button if we have an order */}
+                {orderResult && orderResult.order && (
+                  <button 
+                    onClick={() => handleNavigationTool({ action: "redirect_to_tracking" })}
+                    className="bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 px-4 rounded flex items-center justify-center w-full mt-3"
+                  >
+                    <FaLocationArrow className="mr-2" /> Track Order
+                  </button>
+                )}
+              </div>
+              
+              <div className="text-xs text-gray-500 mt-1 ml-1">
+                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          </div>
+        );
+      } catch (error) {
+        console.error("Error rendering bot message:", error);
+        // Fallback to simple message
+        return renderSimpleMessage(message);
+      }
+    }
+    
+    return renderSimpleMessage(message);
+  };
+  
+  // Render a simple message without interactive components
+  const renderSimpleMessage = (message) => {
     return (
       <div className="flex items-start flex-row">
         <div className="rounded-full p-2 mx-2 flex-shrink-0 bg-gray-200 text-gray-700">
@@ -922,198 +1669,11 @@ const Chatbot = () => {
         
         <div>
           <div className="inline-block rounded-lg px-4 py-2 bg-gray-100 text-gray-800 max-w-[280px]">
-            {/* Render message text */}
-            <div className="mb-3">
-              {message.text.split('\n').map((text, i) => {
-                // Simple support for markdown (bold)
-                const boldText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                return (
-                  <p 
-                    key={i} 
-                    className={i > 0 ? 'mt-1' : ''}
-                    dangerouslySetInnerHTML={{ __html: boldText }}
-                  />
-                );
-              })}
+            <div className="markdown-content">
+              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+                {message.text}
+              </ReactMarkdown>
             </div>
-            
-            {/* Show frequent order suggestions */}
-            {message.showUsualItems && message.frequentItems && message.frequentItems.length > 0 && (
-              <div className="mt-3">
-                <p className="font-medium mb-2">Your favorite items:</p>
-                <div className="space-y-2">
-                  {message.frequentItems.map(item => (
-                    <div key={item.id} className="bg-white rounded-lg p-2 shadow-sm flex justify-between items-center">
-                      <div className="flex items-center">
-                        <FaStar className="text-yellow-500 mr-2" size={14} />
-                        <div>
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-xs text-gray-500">${item.price.toFixed(2)}</div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleAddFrequentItem(item)}
-                        className="bg-[#4B2E2B] text-white rounded px-2 py-1 text-xs"
-                      >
-                        Add to cart
-                      </button>
-                    </div>
-                  ))}
-                  
-                  {/* Add all button */}
-                  <button
-                    onClick={handleAddAllFrequentItems}
-                    className="w-full bg-[#4B2E2B] text-white rounded py-2 text-sm"
-                  >
-                    Add all to cart
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            {/* Show cart if requested */}
-            {message.showCart && cartItems.length > 0 && (
-              <div className="mt-3">
-                <p className="font-medium mb-2">Your Cart:</p>
-                <div className="bg-white rounded p-3 shadow-sm">
-                  {cartItems.map(item => (
-                    <div key={item.id} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-                      <div className="flex items-center">
-                        <div className="flex flex-col">
-                          <span className="font-medium">{item.quantity}× {item.name}</span>
-                          <div className="flex mt-1">
-                            <button 
-                              onClick={() => updateItemQuantity(item.id, item.quantity + 1)}
-                              className="text-xs bg-gray-100 hover:bg-gray-200 rounded-l px-2 py-1 text-gray-700"
-                            >
-                              <FaPlus size={8} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if (item.quantity > 1) {
-                                  updateItemQuantity(item.id, item.quantity - 1);
-                                } else {
-                                  removeFromCart(item.id);
-                                }
-                              }}
-                              className="text-xs bg-gray-100 hover:bg-gray-200 rounded-r px-2 py-1 text-gray-700 border-l border-white"
-                            >
-                              <FaMinus size={8} />
-                            </button>
-                            <button 
-                              onClick={() => removeFromCart(item.id)}
-                              className="text-xs bg-red-50 hover:bg-red-100 rounded px-2 py-1 text-red-600 ml-1"
-                            >
-                              <FaTrash size={8} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <span className="font-medium text-[#4B2E2B]">${(item.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                  ))}
-                  <div className="pt-2 mt-2 border-t border-dashed border-gray-200 flex justify-between items-center">
-                    <span className="font-bold">Total:</span>
-                    <span className="font-bold text-[#4B2E2B] text-lg">${totalPrice.toFixed(2)}</span>
-                  </div>
-                </div>
-                
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button 
-                    onClick={() => {
-                      const checkoutMessage = {
-                        id: Date.now().toString(),
-                        sender: 'user',
-                        text: "I want to checkout",
-                        timestamp: new Date().toISOString()
-                      };
-                      saveMessage(checkoutMessage);
-                      setMessages(prev => [...prev, checkoutMessage]);
-                      
-                      // Simulate response
-                      setTimeout(() => {
-                        const botResponse = {
-                          id: Date.now().toString() + 1,
-                          sender: 'bot',
-                          text: "Great! To complete your order, please choose a delivery location:",
-                          timestamp: new Date().toISOString(),
-                          showLocations: true
-                        };
-                        
-                        saveMessage(botResponse);
-                        setMessages(prev => [...prev, botResponse]);
-                      }, 500);
-                    }}
-                    className="bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 px-3 rounded text-center"
-                  >
-                    Checkout
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const menuMessage = {
-                        id: Date.now().toString(),
-                        sender: 'user',
-                        text: "Show me the menu",
-                        timestamp: new Date().toISOString()
-                      };
-                      saveMessage(menuMessage);
-                      setMessages(prev => [...prev, menuMessage]);
-                      
-                      // Simulate response
-                      setTimeout(() => {
-                        setInputValue("Show me the menu");
-                        handleSubmit({ preventDefault: () => {} });
-                      }, 100);
-                    }}
-                    className="border border-[#4B2E2B] text-[#4B2E2B] py-2 px-3 rounded text-center"
-                  >
-                    Add more
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            {/* Show location options */}
-            {message.showLocations && (
-              <div className="mt-3">
-                <p className="font-medium mb-2">Select delivery location:</p>
-                <div className="grid grid-cols-1 gap-2">
-                  {getDeliveryLocations().map(location => (
-                    <button
-                      key={location.id}
-                      onClick={() => handleLocationSelect(location)}
-                      className="bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 px-3 rounded flex items-center justify-between"
-                    >
-                      <span>{location.icon} {location.name}</span>
-                      <span className="text-xs bg-white text-[#4B2E2B] rounded-full px-2 py-1">
-                        {location.eta} min
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Show order summary */}
-            {message.showOrder && message.order && (
-              <div className="mt-3">
-                <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                  <div className="font-medium mb-2 text-green-700">Order Confirmed!</div>
-                  <div className="text-sm text-gray-700">
-                    <div><span className="font-medium">Order ID:</span> {message.order.id}</div>
-                    <div><span className="font-medium">Delivery:</span> {message.order.location.name}</div>
-                    <div><span className="font-medium">ETA:</span> {new Date(message.order.estimatedDelivery).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                  </div>
-                  
-                  <button 
-                    onClick={navigateToTracking}
-                    className="mt-2 w-full bg-[#4B2E2B] hover:bg-opacity-90 text-white py-2 rounded flex items-center justify-center"
-                  >
-                    <FaLocationArrow className="mr-2" /> Track Order
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
           <div className="text-xs text-gray-500 mt-1 ml-1">
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1143,7 +1703,7 @@ const Chatbot = () => {
     );
   };
   
-  // Render a message based on sender
+  // Render message based on sender
   const renderMessage = (message) => {
     return (
       <div 
@@ -1158,24 +1718,31 @@ const Chatbot = () => {
     );
   };
   
+  // Suggestions for quick replies based on language
+  const getSuggestions = () => {
+    const suggestions = {
+      'en': ['Show me the menu', 'I\'d like 3 coffees', 'Place my order', 'Track my order'],
+      'fr': ['Montrez-moi le menu', 'Je voudrais 3 cafés', 'Passer ma commande', 'Suivre ma commande'],
+      'es': ['Muéstrame el menú', 'Quiero 3 cafés', 'Hacer mi pedido', 'Rastrear mi pedido'],
+      'de': ['Zeigen Sie mir die Speisekarte', 'Ich hätte gerne 3 Kaffees', 'Bestellung aufgeben', 'Bestellung verfolgen'],
+      'it': ['Mostrami il menu', 'Vorrei 3 caffè', 'Effettua l\'ordine', 'Traccia il mio ordine'],
+      'ja': ['メニューを見せて', 'コーヒーを3つください', '注文を確定', '注文を追跡'],
+      'zh': ['给我看看菜单', '我想要3杯咖啡', '下单', '跟踪我的订单'],
+      'ar': ['أرني القائمة', 'أريد 3 قهوة', 'تأكيد الطلب', 'تتبع طلبي']
+    };
+    
+    return suggestions[language] || suggestions['en'];
+  };
+
   return (
     <>
+      {/* Audio element for welcome sound */}
+      <audio ref={audioRef} src={"https://www.myinstants.com/media/sounds/pop2.mp3"} />
+      
       <div className="fixed bottom-6 right-6 z-[99999999]">
         {/* Chat button */}
         <button
-          onClick={() => {
-            setIsOpen(!isOpen);
-            // Refresh cart items each time the chat is opened
-            if (!isOpen) {
-              loadCartItems();
-              loadOrderHistory(); // Refresh order history
-              
-              // Add welcome message if first load
-              if (messages.length === 0) {
-                sendWelcomeMessage();
-              }
-            }
-          }}
+          onClick={() => setIsOpen(!isOpen)}
           className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-colors ${
             isOpen ? 'bg-[#4B2E2B] text-[#fff]' : 'bg-[#4B2E2B] text-[#fff]'
           } hover:shadow-xl`}
@@ -1198,15 +1765,49 @@ const Chatbot = () => {
                 <p className="text-xs text-gray-200">How can I help you today?</p>
               </div>
               <div className="flex space-x-4">
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const dropdown = document.getElementById('language-dropdown');
+                      dropdown.classList.toggle('hidden');
+                    }}
+                    className="text-white hover:text-gray-300 mt-2 transition-colors"
+                    title="Change language"
+                  >
+                    <FaGlobe size={16} />
+                  </button>
+                  
+                  {/* Language dropdown */}
+                  <div id="language-dropdown" className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg z-10 hidden">
+                    <div className="py-1">
+                      {getAvailableLanguages().map(lang => (
+                        <button
+                          key={lang.code}
+                          onClick={() => {
+                            handleUITool({ action: "change_language", language: lang.code });
+                            document.getElementById('language-dropdown').classList.add('hidden');
+                          }}
+                          className={`block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left ${
+                            language === lang.code ? 'bg-gray-100 font-medium' : ''
+                          }`}
+                        >
+                          {lang.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
                 <button 
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={() => handleUITool({ action: "toggle_sound_mute" })}
                   className="text-white hover:text-gray-300 transition-colors"
                   title={isMuted ? "Unmute" : "Mute"}
                 >
                   {isMuted ? <FaVolumeMute size={16} /> : <FaVolumeUp size={16} />}
                 </button>
                 <button 
-                  onClick={() => setIsExpanded(!isExpanded)}
+                  onClick={() => handleUITool({ action: "toggle_chat_size" })}
                   className="text-white hover:text-gray-300 transition-colors"
                   title={isExpanded ? "Collapse" : "Expand"}
                 >
@@ -1229,7 +1830,7 @@ const Chatbot = () => {
               </div>
             </div>
             
-            {/* Current order status - if it exists */}
+            {/* Current order status - if exists */}
             {currentOrder && !showHistory && (
               <div className="bg-green-50 border-t border-b border-green-100 p-3 text-xs text-green-700 flex justify-between items-center">
                 <div className="flex items-center">
@@ -1240,7 +1841,7 @@ const Chatbot = () => {
                 </div>
                 <div className="flex items-center">
                   <button 
-                    onClick={navigateToTracking}
+                    onClick={() => handleNavigationTool({ action: "redirect_to_tracking" })}
                     className="mr-3 text-[#4B2E2B] hover:underline font-medium"
                   >
                     Track
@@ -1262,7 +1863,7 @@ const Chatbot = () => {
             {/* Conversation history view */}
             {showHistory ? (
               <div className="h-[55vh] overflow-y-auto p-4 bg-gray-50">
-                <h4 className="font-medium text-[#4B2E2B] mb-3">Conversation History</h4>
+                <h4 className="font-medium text-coffee-dark mb-3">Conversation History</h4>
                 {conversations.length === 0 ? (
                   <div className="text-center text-gray-500 mt-10">
                     <p>No previous conversations</p>
@@ -1275,7 +1876,7 @@ const Chatbot = () => {
                         className="p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
                         onClick={() => loadConversation(convo.date)}
                       >
-                        <div className="font-medium text-[#4B2E2B]">{convo.date}</div>
+                        <div className="font-medium text-coffee-dark">{convo.date}</div>
                         <div className="text-sm text-gray-500 truncate">{convo.preview}</div>
                         <div className="text-xs text-gray-400 mt-1">{convo.messages.length} messages</div>
                       </div>
@@ -1290,57 +1891,6 @@ const Chatbot = () => {
                   <div className="text-center text-gray-500 mt-20">
                     <p className="mb-2">Start a conversation</p>
                     <p className="text-xs text-gray-400">Try asking about our coffee, tea, or ordering a drink!</p>
-                    
-                    <div className="mt-5 flex flex-wrap justify-center gap-2">
-                      {["Show me the menu", "I'd like a coffee", "What can I order?", "The usual, please"].map((suggestion, index) => (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            setInputValue(suggestion);
-                            setTimeout(() => {
-                              handleSubmit({ preventDefault: () => {} });
-                            }, 100);
-                          }}
-                          className="bg-white text-[#4B2E2B] border border-[#4B2E2B] rounded-full px-3 py-1 text-sm hover:bg-[#4B2E2B] hover:text-white transition-colors"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                      
-                      {/* Show "The usual" button only if user has order history */}
-                      {hasOrderHistory && (
-                        <button
-                          onClick={() => {
-                            // Directly trigger the usual order
-                            const usualResult = handleUsualOrder();
-                            
-                            // Add a user message
-                            const userMessage = {
-                              id: Date.now().toString(),
-                              sender: 'user',
-                              text: "I'll have my usual order, please.",
-                              timestamp: new Date().toISOString()
-                            };
-                            saveMessage(userMessage);
-                            setMessages(prev => [...prev, userMessage]);
-                            
-                            // Add bot response
-                            const botResponse = {
-                              id: Date.now().toString() + 1,
-                              sender: 'bot',
-                              text: usualResult.message,
-                              timestamp: new Date().toISOString(),
-                              showCart: usualResult.success
-                            };
-                            saveMessage(botResponse);
-                            setMessages(prev => [...prev, botResponse]);
-                          }}
-                          className="bg-[#D7B49E] text-[#4B2E2B] border border-[#D7B49E] rounded-full px-3 py-1 text-sm hover:bg-[#4B2E2B] hover:text-white transition-colors"
-                        >
-                          Order my usual
-                        </button>
-                      )}
-                    </div>
                   </div>
                 ) : (
                   messages.map(message => renderMessage(message))
@@ -1373,60 +1923,67 @@ const Chatbot = () => {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   placeholder="Type your message..."
-                  className="flex-1 p-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-1 focus:ring-[#4B2E2B] focus:border-[#4B2E2B]"
+                  className="flex-1 p-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-1 focus:ring-coffee-dark focus:border-coffee-dark"
                   disabled={showHistory}
                 />
                 <button
                   type="submit"
                   disabled={isLoading || inputValue.trim() === '' || showHistory}
-                  className={`bg-[#4B2E2B] text-[#fff] p-[11px] rounded-r-lg ${
+                  className={`bg-[#4B2E2B] text-white p-[11px] rounded-r-lg ${
                     isLoading || inputValue.trim() === '' || showHistory
                       ? 'opacity-80 cursor-not-allowed' 
                       : 'hover:opacity-100'
                   }`}
                 >
-                  <FaPaperPlane className='text-[#fff]' size={20} />
+                  <FaPaperPlane size={20} />
                 </button>
               </div>
               
-              {/* Quick suggestion chips */}
+              {/* Quick suggestions based on current language */}
               {!showHistory && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {hasOrderHistory && (
+                <div className="flex flex-wrap mt-2 gap-1">
+                  {getSuggestions().map((suggestion, index) => (
                     <button
+                      key={index}
                       onClick={() => {
-                        setInputValue("I'll have my usual");
+                        setInputValue(suggestion);
                         setTimeout(() => handleSubmit({ preventDefault: () => {} }), 100);
                       }}
-                      className="text-xs text-[#4B2E2B] bg-gray-100 hover:bg-gray-200 rounded-full px-2 py-1"
+                      className="bg-gray-100 hover:bg-gray-200 text-coffee-dark rounded-full px-3 py-1 text-xs"
                     >
-                      My usual
+                      {suggestion}
                     </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setInputValue("What's popular today?");
-                      setTimeout(() => handleSubmit({ preventDefault: () => {} }), 100);
-                    }}
-                    className="text-xs text-[#4B2E2B] bg-gray-100 hover:bg-gray-200 rounded-full px-2 py-1"
-                  >
-                    What's popular?
-                  </button>
-                  <button
-                    onClick={() => {
-                      setInputValue("Show me the menu");
-                      setTimeout(() => handleSubmit({ preventDefault: () => {} }), 100);
-                    }}
-                    className="text-xs text-[#4B2E2B] bg-gray-100 hover:bg-gray-200 rounded-full px-2 py-1"
-                  >
-                    Menu
-                  </button>
+                  ))}
                 </div>
               )}
             </form>
           </div>
         )}
       </div>
+      
+      {/* Add styles for markdown content */}
+      <style jsx>{`
+        .markdown-content strong {
+          font-weight: bold;
+        }
+        .markdown-content em {
+          font-style: italic;
+        }
+        .markdown-content code {
+          font-family: monospace;
+          background-color: #f0f0f0;
+          padding: 0 0.2rem;
+          border-radius: 3px;
+        }
+        .markdown-content ul {
+          list-style-type: disc;
+          padding-left: 1.5rem;
+        }
+        .markdown-content ol {
+          list-style-type: decimal;
+          padding-left: 1.5rem;
+        }
+      `}</style>
     </>
   );
 };

@@ -328,7 +328,7 @@ const RobotTracker = () => {
       )}
       
       {/* Simulation controls */}
-      <div className="mb-6 bg-white rounded-lg shadow-md p-4 border border-coffee-latte">
+      <div className="mb-6 hidden bg-white rounded-lg shadow-md p-4 border border-coffee-latte">
         <h2 className="font-semibold text-lg mb-2">Delivery Simulation</h2>
         <div className="flex flex-col md:flex-row items-center gap-4">
           <div className="flex-1 w-full">

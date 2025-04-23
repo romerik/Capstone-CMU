@@ -101,16 +101,29 @@ const Orders = () => {
     };
     
     // Simulate processing delay
-    setTimeout(() => {
-      const result = placeOrder(deliveryDetails);
+    // setTimeout(() => {
+    //   const result = placeOrder(deliveryDetails);
       
-      if (result.success) {
-        navigate('/robot');
-      } else {
-        alert(result.message || 'An error occurred. Please try again.');
-        setIsLoading(false);
-      }
-    }, 1000);
+    //   if (result.success) {
+    //     navigate('/robot');
+    //   } else {
+    //     alert(result.message || 'An error occurred. Please try again.');
+    //     setIsLoading(false);
+    //   }
+    // }, 1000);
+    // const result = placeOrder(deliveryDetails);
+    fetch('https://2e19-41-216-98-178.ngrok-free.app/api/delivery/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interface_name: "en7" })
+    })
+    .then(response => response.json())
+    .then(data => {
+      console.log('Tracking started:', data)
+      setIsLoading(false);
+      navigate('/robot');
+    })
+    .catch(error => console.error('Error starting tracking:', error));
   };
   
   return (

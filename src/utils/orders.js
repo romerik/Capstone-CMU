@@ -18,6 +18,10 @@ export const getCartItems = () => {
     }
     
     localStorage.setItem('cart', JSON.stringify(cart));
+    const event = new CustomEvent('cartUpdated', { 
+      detail: { cart: cart } 
+    });
+    window.dispatchEvent(event);
     return cart;
   };
   
@@ -25,6 +29,10 @@ export const getCartItems = () => {
     let cart = getCartItems();
     cart = cart.filter(item => item.id !== itemId);
     localStorage.setItem('cart', JSON.stringify(cart));
+    const event = new CustomEvent('cartUpdated', { 
+      detail: { cart: cart } 
+    });
+    window.dispatchEvent(event);
     return cart;
   };
   
@@ -40,6 +48,10 @@ export const getCartItems = () => {
       
       cart[itemIndex].quantity = quantity;
       localStorage.setItem('cart', JSON.stringify(cart));
+      const event = new CustomEvent('cartUpdated', { 
+        detail: { cart: cart } 
+      });
+      window.dispatchEvent(event);
     }
     
     return cart;
@@ -47,6 +59,10 @@ export const getCartItems = () => {
   
   export const clearCart = () => {
     localStorage.setItem('cart', '[]');
+    const event = new CustomEvent('cartUpdated', { 
+      detail: { cart: [] } 
+    });
+    window.dispatchEvent(event);
     return [];
   };
 
