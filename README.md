@@ -41,8 +41,8 @@ An integrated web application for Neo Cafe, featuring a coffee-themed interface 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/a-ahabwe/capstone-project.git
-cd capstone-project
+git clone https://github.com/romerik/Capstone-CMU.git
+cd Capstone-CMU
 ```
 
 2. Install dependencies:
