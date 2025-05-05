@@ -17,8 +17,8 @@ Before you begin, ensure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/a-ahabwe/capstone-project.git
-cd capstone-project
+git clone https://github.com/romerik/Capstone-CMU.git
+cd Capstone-CMU
 ```
 
 ### 2. Install Dependencies
