@@ -53,7 +53,7 @@ const Chatbot = () => {
   // Initialize OpenAI client
   const openai = useRef(
     new OpenAI({
-      apiKey: "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",
+      apiKey: "",
       dangerouslyAllowBrowser: true
     })
   ).current;
@@ -1080,7 +1080,7 @@ const Chatbot = () => {
           });
           window.dispatchEvent(event);
 
-          fetch('https://2e19-41-216-98-178.ngrok-free.app/api/delivery/start', {
+          fetch('https://01ff-41-216-98-178.ngrok-free.app/api/delivery/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ interface_name: "en7" })
